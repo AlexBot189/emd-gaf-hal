@@ -1025,24 +1025,13 @@ static void _sensor_event_cb(inv_imu_sensor_event_t *event)
 
     pthread_mutex_unlock(&g->output_mutex);
 
-    /* ── 如果 fifo_push_en, 更新融合输出缓存 ── */
-    if (g->fifo_push_en) {
-        pthread_mutex_lock(&g->output_mutex);
-        _convert_output(&g->edmp_outputs, g->timestamp, &g->cached_output);
-        g->output_updated = 1;
-        pthread_mutex_unlock(&g->output_mutex);
-    }
-
-    /* 清除非 racc/rgyr 的标志 */
+    /* 清除非 racc/rgyr 的标志 (MCU原样保留) */
     g->edmp_outputs.mag_bias_valid  = 0;
     g->edmp_outputs.rmag_valid      = 0;
     g->edmp_outputs.mrm_state_valid = 0;
     g->edmp_outputs.mrm_evt_chg_st  = 0;
     g->edmp_outputs.mrm_evt_exe_mrm = 0;
     g->edmp_outputs.mrm_evt_exc_thr = 0;
-    g->edmp_outputs.grv_quat_valid  = 0;
-    g->edmp_outputs.gmrv_quat_valid = 0;
-    g->edmp_outputs.rv_quat_valid   = 0;
     if (0 == g->gyro_is_on) {
         g->edmp_outputs.gyr_bias_valid  = 0;
         g->edmp_outputs.gyr_flags_valid = 0;
