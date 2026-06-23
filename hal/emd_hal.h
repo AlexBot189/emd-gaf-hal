@@ -19,7 +19,8 @@ extern "C" {
 #endif
 
 /* ── Board Init ── */
-int emd_hal_init(const char *i2c_dev, uint8_t imu_addr, unsigned int gpio_line);
+int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
+                 const char *gpio_chip, unsigned int gpio_line);
 
 /* ── IMU I2C I/O ── */
 int emd_hal_read_reg(uint8_t reg, uint8_t *buf, uint32_t len);

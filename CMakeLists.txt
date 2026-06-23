@@ -9,7 +9,8 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE)
     message(STATUS "Cross-compiling with ${CMAKE_TOOLCHAIN_FILE}")
 endif()
 
-# ── Dependencies (only pthread needed) ──
+# ── Dependencies ──
+find_library(GPIOD_LIB gpiod REQUIRED)
 find_library(PTHREAD_LIB pthread REQUIRED)
 find_library(M_LIB m REQUIRED)
 
@@ -77,7 +78,7 @@ add_executable(emd-gaf
 )
 
 target_include_directories(emd-gaf PRIVATE ${INC_DIRS})
-target_link_libraries(emd-gaf PRIVATE ${PTHREAD_LIB} ${M_LIB})
+target_link_libraries(emd-gaf PRIVATE ${GPIOD_LIB} ${PTHREAD_LIB} ${M_LIB})
 target_compile_options(emd-gaf PRIVATE -Wall -Wextra -O2)
 
 # ── Install ──
