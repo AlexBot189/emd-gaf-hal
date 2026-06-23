@@ -64,7 +64,6 @@
 
 /* ── Default config ── */
 #define DEFAULT_I2C_DEV   "/dev/i2c-3"
-#define DEFAULT_GPIO_CHIP "gpiochip4"
 #define DEFAULT_GPIO_LINE 2
 #define DEFAULT_IMU_ADDR  0x68
 
@@ -328,7 +327,6 @@ static void usage(const char *prog)
 {
 	printf("Usage: %s [options]\n", prog);
 	printf("  -i <dev>     I2C device   (default: %s)\n", DEFAULT_I2C_DEV);
-	printf("  -g <chip>    GPIO chip    (default: %s)\n", DEFAULT_GPIO_CHIP);
 	printf("  -l <line>    GPIO line    (default: %d)\n", DEFAULT_GPIO_LINE);
 	printf("  -a <addr>    I2C addr     (default: 0x%02x)\n", DEFAULT_IMU_ADDR);
 	printf("  -m <mode>    opmode 0-9   (default: 0)\n");
@@ -340,15 +338,13 @@ int main(int argc, char *argv[])
 {
 	int rc = 0;
 	const char *i2c_dev    = DEFAULT_I2C_DEV;
-	const char *gpio_chip  = DEFAULT_GPIO_CHIP;
 	unsigned int gpio_line = DEFAULT_GPIO_LINE;
 	uint8_t     imu_addr   = DEFAULT_IMU_ADDR;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "i:g:l:a:m:h")) != -1) {
+	while ((opt = getopt(argc, argv, "i:l:a:m:h")) != -1) {
 		switch (opt) {
 		case 'i': i2c_dev    = optarg; break;
-		case 'g': gpio_chip  = optarg; break;
 		case 'l': gpio_line  = (unsigned int)atoi(optarg); break;
 		case 'a': imu_addr   = (uint8_t)strtoul(optarg, NULL, 0); break;
 		case 'm': current_opmode = (uint8_t)atoi(optarg); break;
@@ -376,7 +372,7 @@ int main(int argc, char *argv[])
 	acc_bias_q16[2] = 0;
 
 	/* ── 1. Init HAL (replaces si_board_init, si_io_imu_init, si_flash_storage_init, si_init_timers) ── */
-	rc |= emd_hal_init(i2c_dev, imu_addr, gpio_chip, gpio_line);
+	rc |= emd_hal_init(i2c_dev, imu_addr, gpio_line);
 	SI_CHECK_RC(rc);
 
 	/* ── 2. Configure GPIO to call int_cb when INT1 fires (replaces si_init_gpio_int) ── */
@@ -387,7 +383,7 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "[I] ### Example EDMP GAF (Linux port)\n");
 	fprintf(stderr, "[I] ###\n");
 	fprintf(stderr, "[I] I2C: %s (addr=0x%02x), GPIO: %s line %u, Mode: %d\n",
-	        i2c_dev, imu_addr, gpio_chip, gpio_line, current_opmode);
+	        i2c_dev, imu_addr, gpio_line, current_opmode);
 
 	high_res_en    = 1; /* By default high resolution data are built */
 	mrm_auto_is_on = 1; /* By default MRM is enabled */

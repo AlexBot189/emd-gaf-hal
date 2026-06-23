@@ -2,16 +2,16 @@ cmake_minimum_required(VERSION 3.10)
 project(emd-gaf C)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -O2")
+set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # ── Toolchain (set via -DCMAKE_TOOLCHAIN_FILE for cross-compile) ──
 if(DEFINED CMAKE_TOOLCHAIN_FILE)
     message(STATUS "Cross-compiling with ${CMAKE_TOOLCHAIN_FILE}")
 endif()
 
-# ── Dependencies ──
-find_library(GPIOD_LIB gpiod REQUIRED)
+# ── Dependencies (only pthread needed) ──
 find_library(PTHREAD_LIB pthread REQUIRED)
+find_library(M_LIB m REQUIRED)
 
 # ── Sources ──
 set(DRIVER_DIR  ${CMAKE_SOURCE_DIR}/drivers/icm45608/imu)
@@ -29,9 +29,9 @@ set(IMU_SRCS
     ${DRIVER_DIR}/inv_imu_edmp_mrm.c
     ${DRIVER_DIR}/inv_imu_transport.c
     ${DRIVER_DIR}/inv_imu_i2cm.c
+    ${DRIVER_DIR}/inv_imu_selftest.c
     ${DRIVER_DIR}/sif_classifier_ir.c
     ${DRIVER_DIR}/sif_feature_extract_ir.c
-    ${DRIVER_DIR}/inv_imu_selftest.c
 )
 
 # Magnetometer driver sources
@@ -77,13 +77,8 @@ add_executable(emd-gaf
 )
 
 target_include_directories(emd-gaf PRIVATE ${INC_DIRS})
-target_link_libraries(emd-gaf PRIVATE ${GPIOD_LIB} ${PTHREAD_LIB})
+target_link_libraries(emd-gaf PRIVATE ${PTHREAD_LIB} ${M_LIB})
+target_compile_options(emd-gaf PRIVATE -Wall -Wextra -O2)
 
 # ── Install ──
 install(TARGETS emd-gaf DESTINATION bin)
-
-# ── Print summary ──
-message(STATUS "IMU driver:   ${DRIVER_DIR}")
-message(STATUS "HAL:          ${HAL_DIR}")
-message(STATUS "App:          ${APP_DIR}")
-message(STATUS "GPIOD:        ${GPIOD_LIB}")
