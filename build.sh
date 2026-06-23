@@ -1,16 +1,16 @@
 #!/bin/bash
 #==============================================================================
 # emd-gaf 交叉编译脚本
-# 用法: ./build.sh [build|clean|rebuild]
-#   build   - 交叉编译 (默认)
-#   clean   - 仅清理构建目录
-#   rebuild - 清理后重新编译
+# 用法: ./build.sh [build|clean]
+#   build - 交叉编译 (默认, 先清理再编译)
+#   clean - 仅清理构建目录
 #==============================================================================
 set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TOOLCHAIN="$PROJECT_DIR/toolchain.cmake"
 CMAKE="/opt/gcc-arm-12.4-x86_64-aarch64-linux-gnu/bin/cmake"
+READELF="/opt/gcc-arm-12.4-x86_64-aarch64-linux-gnu/bin/aarch64-buildroot-linux-gnu-readelf"
 
 BUILD_DIR="$PROJECT_DIR/build"
 TARGET="emd-gaf"
@@ -31,19 +31,20 @@ case "$CMD" in
         _clean
         exit 0
         ;;
-    rebuild)
-        _clean
-        ;;
     build)
         ;;
     *)
-        echo "用法: $0 [build|clean|rebuild]"
-        echo "  build   - 交叉编译 (默认)"
-        echo "  clean   - 仅清理构建目录"
-        echo "  rebuild - 清理后重新编译"
+        echo "用法: $0 [build|clean]"
+        echo "  build - 交叉编译 (默认, 清理后编译)"
+        echo "  clean - 仅清理构建目录"
         exit 1
         ;;
 esac
+
+#==============================================================================
+# 编译前清理
+#==============================================================================
+_clean
 
 #==============================================================================
 # 交叉编译
@@ -60,19 +61,27 @@ $CMAKE -S "$PROJECT_DIR" -B "$BUILD_DIR" \
 $CMAKE --build "$BUILD_DIR" -j"$(nproc)"
 
 #==============================================================================
-# 输出
+# 结果
 #==============================================================================
 echo ""
 echo "=========================================="
-echo " 编译完成"
+echo " 编译完成!"
 echo "=========================================="
+echo ""
+
 ls -lh "$BUILD_DIR/$TARGET"
-file "$BUILD_DIR/$TARGET"
+
+echo ""
+echo "架构信息:"
+$READELF -h "$BUILD_DIR/$TARGET" 2>/dev/null | grep -E "Machine|Class|Type" || true
+
 echo ""
 echo "产物: $BUILD_DIR/$TARGET"
-echo "部署: scp $BUILD_DIR/$TARGET root@rv1126b:/usr/bin/"
+echo ""
+echo "部署:"
+echo "  scp $BUILD_DIR/$TARGET root@rv1126b:/usr/bin/"
 echo ""
 echo "运行:"
 echo "  ssh root@rv1126b"
-echo "  rmmod inv-mpu-icm45600  # 卸载 IIO 驱动"
+echo "  rmmod inv-mpu-icm45600"
 echo "  emd-gaf -i /dev/i2c-3 -g gpiochip4 -l 2 -m 5"
