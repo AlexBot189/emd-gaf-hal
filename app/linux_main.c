@@ -1174,104 +1174,97 @@ static int store_imu_biases(const int32_t m_bias_q16[3], const uint8_t m_accurac
 	return rc;
 }
 
-/* ── notify_data() — stdout printf, replaces MCU UART frontend ── */
+/* ── notify_data() — human-readable stdout ── */
 static void notify_data(uint64_t time, const inv_edmp_gaf_outputs_t *gaf_outputs,
                         const int16_t rtemp_data)
 {
 	(void)rtemp_data;
 
-	if (gaf_outputs->grv_quat_valid) {
-		printf("DATA:ts=%llu GRV_Q30=[%d,%d,%d,%d]\n",
-		       (unsigned long long)time,
-		       gaf_outputs->grv_quat_q30[0], gaf_outputs->grv_quat_q30[1],
-		       gaf_outputs->grv_quat_q30[2], gaf_outputs->grv_quat_q30[3]);
-	}
+	float ts = time / 1000000.0f;
 
-	if (gaf_outputs->gmrv_quat_valid) {
-		printf("DATA:ts=%llu GMRV_Q30=[%d,%d,%d,%d] heading_q27=%d\n",
-		       (unsigned long long)time,
-		       gaf_outputs->gmrv_quat_q30[0], gaf_outputs->gmrv_quat_q30[1],
-		       gaf_outputs->gmrv_quat_q30[2], gaf_outputs->gmrv_quat_q30[3],
-		       gaf_outputs->gmrv_heading_q27);
-	}
-
+	/* 9-axis quaternion (the main output) */
 	if (gaf_outputs->rv_quat_valid) {
-		printf("DATA:ts=%llu RV_Q30=[%d,%d,%d,%d] heading_q27=%d\n",
-		       (unsigned long long)time,
-		       gaf_outputs->rv_quat_q30[0], gaf_outputs->rv_quat_q30[1],
-		       gaf_outputs->rv_quat_q30[2], gaf_outputs->rv_quat_q30[3],
-		       gaf_outputs->rv_heading_q27);
+		float qw = gaf_outputs->rv_quat_q30[0] / 1073741824.0f;
+		float qx = gaf_outputs->rv_quat_q30[1] / 1073741824.0f;
+		float qy = gaf_outputs->rv_quat_q30[2] / 1073741824.0f;
+		float qz = gaf_outputs->rv_quat_q30[3] / 1073741824.0f;
+		float hdg = gaf_outputs->rv_heading_q27 / 134217728.0f;
+		printf("[%.3fs] QUAT9:  w=%+.4f x=%+.4f y=%+.4f z=%+.4f  heading=%.1f°\n",
+		       ts, qw, qx, qy, qz, hdg * 57.29578f);
 	}
 
+	/* 6-axis quaternion */
+	if (gaf_outputs->grv_quat_valid) {
+		float qw = gaf_outputs->grv_quat_q30[0] / 1073741824.0f;
+		float qx = gaf_outputs->grv_quat_q30[1] / 1073741824.0f;
+		float qy = gaf_outputs->grv_quat_q30[2] / 1073741824.0f;
+		float qz = gaf_outputs->grv_quat_q30[3] / 1073741824.0f;
+		printf("[%.3fs] QUAT6:  w=%+.4f x=%+.4f y=%+.4f z=%+.4f\n", ts, qw, qx, qy, qz);
+	}
+
+	/* Calibrated accel (mg → g) */
 	if (gaf_outputs->acc_cal_valid) {
-		printf("DATA:ts=%llu ACC_CAL_Q16=[%d,%d,%d]\n",
-		       (unsigned long long)time,
-		       gaf_outputs->acc_cal_q16[0], gaf_outputs->acc_cal_q16[1],
-		       gaf_outputs->acc_cal_q16[2]);
+		printf("[%.3fs] ACCEL:  x=%+.3fg y=%+.3fg z=%+.3fg\n", ts,
+		       gaf_outputs->acc_cal_q16[0] / 65536.0f / 1000.0f,
+		       gaf_outputs->acc_cal_q16[1] / 65536.0f / 1000.0f,
+		       gaf_outputs->acc_cal_q16[2] / 65536.0f / 1000.0f);
 	}
 
-	if (gaf_outputs->gyr_bias_valid || gaf_outputs->gyr_flags_valid) {
-		printf("DATA:ts=%llu GYR_CAL_Q16=[%d,%d,%d] GYR_BIAS_Q16=[%d,%d,%d] stationary=%d accuracy=%d\n",
-		       (unsigned long long)time,
-		       gaf_outputs->gyr_cal_q16[0], gaf_outputs->gyr_cal_q16[1],
-		       gaf_outputs->gyr_cal_q16[2],
-		       gaf_outputs->gyr_bias_q16[0], gaf_outputs->gyr_bias_q16[1],
-		       gaf_outputs->gyr_bias_q16[2],
-		       (int32_t)gaf_outputs->stationary_flag,
-		       (int32_t)gaf_outputs->gyr_accuracy_flag);
+	/* Calibrated gyro (mdps → dps) + bias */
+	if (gaf_outputs->gyr_flags_valid) {
+		printf("[%.3fs] GYRO:   x=%+.3fdps y=%+.3fdps z=%+.3fdps"
+		       "  bias=[%+.4f %+.4f %+.4f]dps  stationary=%d acc=%d\n", ts,
+		       gaf_outputs->gyr_cal_q16[0] / 65536.0f / 1000.0f,
+		       gaf_outputs->gyr_cal_q16[1] / 65536.0f / 1000.0f,
+		       gaf_outputs->gyr_cal_q16[2] / 65536.0f / 1000.0f,
+		       gaf_outputs->gyr_bias_q16[0] / 65536.0f,
+		       gaf_outputs->gyr_bias_q16[1] / 65536.0f,
+		       gaf_outputs->gyr_bias_q16[2] / 65536.0f,
+		       (int)gaf_outputs->stationary_flag,
+		       (int)gaf_outputs->gyr_accuracy_flag);
 	}
 
+	/* Raw + calibrated magnetometer (uT) */
 	if (gaf_outputs->rmag_valid) {
-		printf("DATA:ts=%llu RMAG=[%d,%d,%d]\n",
-		       (unsigned long long)time,
-		       (int32_t)gaf_outputs->raw_mag[0], (int32_t)gaf_outputs->raw_mag[1],
-		       (int32_t)gaf_outputs->raw_mag[2]);
+		printf("[%.3fs] MAG:    raw=[%+6.1f %+6.1f %+6.1f]uT", ts,
+		       gaf_outputs->raw_mag[0] * 0.15f,
+		       gaf_outputs->raw_mag[1] * 0.15f,
+		       gaf_outputs->raw_mag[2] * 0.15f);
+		if (gaf_outputs->mag_bias_valid) {
+			printf("  cal=[%+6.1f %+6.1f %+6.1f]uT"
+			       "  bias=[%+.1f %+.1f %+.1f]uT  acc=%d\n",
+			       gaf_outputs->mag_cal_q16[0] / 65536.0f,
+			       gaf_outputs->mag_cal_q16[1] / 65536.0f,
+			       gaf_outputs->mag_cal_q16[2] / 65536.0f,
+			       gaf_outputs->mag_bias_q16[0] / 65536.0f,
+			       gaf_outputs->mag_bias_q16[1] / 65536.0f,
+			       gaf_outputs->mag_bias_q16[2] / 65536.0f,
+			       (int)gaf_outputs->mag_accuracy_flag);
+		} else {
+			printf("\n");
+		}
 	}
 
-	if (gaf_outputs->mag_bias_valid && gaf_outputs->rmag_valid) {
-		printf("DATA:ts=%llu MAG_CAL_Q16=[%d,%d,%d] MAG_BIAS_Q16=[%d,%d,%d] anomalies=%d accuracy=%d\n",
-		       (unsigned long long)time,
-		       gaf_outputs->mag_cal_q16[0], gaf_outputs->mag_cal_q16[1],
-		       gaf_outputs->mag_cal_q16[2],
-		       gaf_outputs->mag_bias_q16[0], gaf_outputs->mag_bias_q16[1],
-		       gaf_outputs->mag_bias_q16[2],
-		       (int32_t)gaf_outputs->mag_anomaly,
-		       (int32_t)gaf_outputs->mag_accuracy_flag);
-	}
-
-	if (gaf_outputs->mrm_state_valid) {
-		printf("DATA:ts=%llu MRM_STATE=%d chg=%d exe=%d thr=%d\n",
-		       (unsigned long long)time,
-		       (uint32_t)gaf_outputs->mrm_state,
-		       (uint32_t)gaf_outputs->mrm_evt_chg_st,
-		       (uint32_t)gaf_outputs->mrm_evt_exe_mrm,
-		       (uint32_t)gaf_outputs->mrm_evt_exc_thr);
-	}
-
+	/* Temperature */
 	if (gaf_outputs->temperature_valid) {
-		printf("DATA:ts=%llu TEMP_Q16=%d\n",
-		       (unsigned long long)time,
-		       gaf_outputs->temp_degC_q16);
+		printf("[%.3fs] TEMP:   %.1f°C\n", ts,
+		       gaf_outputs->temp_degC_q16 / 65536.0f);
 	}
+
+	printf("\n");
 }
 
-/* ── notify_raw_data() — stdout printf, replaces MCU UART frontend ── */
+/* ── notify_raw_data() — human-readable stdout ── */
 static void notify_raw_data(uint64_t time, uint8_t input_mask,
                             const int16_t accel_data[3],
                             const int16_t gyro_data[3],
                             const int16_t temp_data)
 {
+	float ts = time / 1000000.0f;
 	if (input_mask & MASK_NOTIFY_RAW_ACC_DATA)
-		printf("RAW:ts=%llu RAcc=[%d,%d,%d]\n",
-		       (unsigned long long)time,
-		       (uint32_t)accel_data[0], (uint32_t)accel_data[1], (uint32_t)accel_data[2]);
-
+		printf("[%.3fs] RAW_ACC: x=%+6d y=%+6d z=%+6d\n", ts,
+		       accel_data[0], accel_data[1], accel_data[2]);
 	if (input_mask & MASK_NOTIFY_RAW_GYR_DATA)
-		printf("RAW:ts=%llu RGyr=[%d,%d,%d]\n",
-		       (unsigned long long)time,
-		       (uint32_t)gyro_data[0], (uint32_t)gyro_data[1], (uint32_t)gyro_data[2]);
-
-	if ((input_mask & MASK_NOTIFY_RAW_ACC_DATA) || (input_mask & MASK_NOTIFY_RAW_GYR_DATA))
-		printf("RAW:ts=%llu RTemp=%d\n",
-		       (unsigned long long)time, (uint32_t)temp_data);
+		printf("[%.3fs] RAW_GYR: x=%+6d y=%+6d z=%+6d\n", ts,
+		       gyro_data[0], gyro_data[1], gyro_data[2]);
 }
