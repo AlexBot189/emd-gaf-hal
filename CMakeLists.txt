@@ -9,19 +9,18 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE)
     message(STATUS "Cross-compiling with ${CMAKE_TOOLCHAIN_FILE}")
 endif()
 
-# ── Dependencies ──
-# libgpiod bundled locally (hal/gpiod/)
-set(GPIOD_DIR ${HAL_DIR}/gpiod)
-set(GPIOD_LIB ${GPIOD_DIR}/lib/libgpiod.so)
-find_library(PTHREAD_LIB pthread REQUIRED)
-find_library(M_LIB m REQUIRED)
-
 # ── Sources ──
 set(DRIVER_DIR  ${CMAKE_SOURCE_DIR}/drivers/icm45608/imu)
 set(ICT1531_DIR ${CMAKE_SOURCE_DIR}/drivers/Ict1531x)
 set(HAL_DIR     ${CMAKE_SOURCE_DIR}/hal)
 set(APP_DIR     ${CMAKE_SOURCE_DIR}/app)
 set(TOOLS_DIR   ${CMAKE_SOURCE_DIR}/tools)
+
+# ── Dependencies (after dirs are defined) ──
+set(GPIOD_DIR ${HAL_DIR}/gpiod)
+set(GPIOD_LIB ${GPIOD_DIR}/lib/libgpiod.so)
+find_library(PTHREAD_LIB pthread REQUIRED)
+find_library(M_LIB m REQUIRED)
 
 # IMU driver sources
 set(IMU_SRCS
