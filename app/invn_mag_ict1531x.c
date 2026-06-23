@@ -17,6 +17,7 @@
 
 #include "invn_mag.h"
 #include "system_interface.h"
+#include "Invn/EmbUtils/Message.h"
 
 /* Driver */
 #include "imu/inv_imu_edmp_mrm.h"

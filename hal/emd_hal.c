@@ -257,11 +257,8 @@ int emd_hal_storage_write(const uint8_t *data, uint32_t size)
  * Init / Deinit
  * ═══════════════════════════════════════════════════════════════════ */
 
-int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
-                 const char *gpio_chip, unsigned int gpio_line)
+int emd_hal_init(const char *i2c_dev, uint8_t imu_addr, unsigned int gpio_line)
 {
-    (void)gpio_chip; /* sysfs doesn't need chip name */
-
     if (g_initialized)
         return 0;
 

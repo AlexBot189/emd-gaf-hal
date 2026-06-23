@@ -1,0 +1,39 @@
+file(REMOVE_RECURSE
+  "CMakeFiles/emd-gaf.dir/app/invn_mag_ict1531x.c.o"
+  "CMakeFiles/emd-gaf.dir/app/invn_mag_ict1531x.c.o.d"
+  "CMakeFiles/emd-gaf.dir/app/linux_main.c.o"
+  "CMakeFiles/emd-gaf.dir/app/linux_main.c.o.d"
+  "CMakeFiles/emd-gaf.dir/drivers/Ict1531x/Ict1531x.c.o"
+  "CMakeFiles/emd-gaf.dir/drivers/Ict1531x/Ict1531x.c.o.d"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_driver.c.o"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_driver.c.o.d"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_driver_advanced.c.o"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_driver_advanced.c.o.d"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_edmp.c.o"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_edmp.c.o.d"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_edmp_mrm.c.o"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_edmp_mrm.c.o.d"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_edmp_wearable.c.o"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_edmp_wearable.c.o.d"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_i2cm.c.o"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_i2cm.c.o.d"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_selftest.c.o"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_selftest.c.o.d"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_transport.c.o"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/inv_imu_transport.c.o.d"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/sif_classifier_ir.c.o"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/sif_classifier_ir.c.o.d"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/sif_feature_extract_ir.c.o"
+  "CMakeFiles/emd-gaf.dir/drivers/icm45608/imu/sif_feature_extract_ir.c.o.d"
+  "CMakeFiles/emd-gaf.dir/hal/emd_hal.c.o"
+  "CMakeFiles/emd-gaf.dir/hal/emd_hal.c.o.d"
+  "CMakeFiles/emd-gaf.dir/tools/Invn/EmbUtils/Message.c.o"
+  "CMakeFiles/emd-gaf.dir/tools/Invn/EmbUtils/Message.c.o.d"
+  "emd-gaf"
+  "emd-gaf.pdb"
+)
+
+# Per-language clean rules from dependency scanning.
+foreach(lang C)
+  include(CMakeFiles/emd-gaf.dir/cmake_clean_${lang}.cmake OPTIONAL)
+endforeach()

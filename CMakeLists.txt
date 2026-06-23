@@ -43,7 +43,6 @@ set(MAG_SRCS
 set(APP_SRCS
     ${APP_DIR}/linux_main.c
     ${APP_DIR}/invn_mag_ict1531x.c
-    ${APP_DIR}/frontend_uart.c
 )
 
 # Tools
@@ -58,8 +57,9 @@ set(HAL_SRCS
 
 # ── Include paths ──
 set(INC_DIRS
-    ${DRIVER_DIR}
-    ${ICT1531_DIR}
+    ${DRIVER_DIR}/../..
+    ${DRIVER_DIR}/..
+    ${ICT1531_DIR}/..
     ${HAL_DIR}
     ${APP_DIR}
     ${TOOLS_DIR}

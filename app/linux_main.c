@@ -382,7 +382,7 @@ int main(int argc, char *argv[])
 	fprintf(stderr, "[I] ###\n");
 	fprintf(stderr, "[I] ### Example EDMP GAF (Linux port)\n");
 	fprintf(stderr, "[I] ###\n");
-	fprintf(stderr, "[I] I2C: %s (addr=0x%02x), GPIO: %s line %u, Mode: %d\n",
+	fprintf(stderr, "[I] I2C: %s (addr=0x%02x), GPIO: line %u, Mode: %d\n",
 	        i2c_dev, imu_addr, gpio_line, current_opmode);
 
 	high_res_en    = 1; /* By default high resolution data are built */
