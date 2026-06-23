@@ -207,9 +207,18 @@ int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
     printf("EMD_HAL: I2C %s ready (addr=0x%02x)\n", i2c_dev, imu_addr);
 
     /* ── GPIO ── */
-    g_gpio_chip = gpiod_chip_open(gpio_chip);
+    /* gpiod_chip_open needs full path like /dev/gpiochip4.
+     * Accept both "gpiochip4" and "/dev/gpiochip4". */
+    char path[64];
+    if (gpio_chip[0] == '/')
+        snprintf(path, sizeof(path), "%s", gpio_chip);
+    else
+        snprintf(path, sizeof(path), "/dev/%s", gpio_chip);
+
+    g_gpio_chip = gpiod_chip_open(path);
     if (!g_gpio_chip) {
-        fprintf(stderr, "EMD_HAL: gpiod_chip_open(%s) failed\n", gpio_chip);
+        fprintf(stderr, "EMD_HAL: gpiod_chip_open(%s) failed: %s\n",
+                path, strerror(errno));
         close(g_i2c_fd);
         return -1;
     }
@@ -232,7 +241,7 @@ int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
         close(g_i2c_fd);
         return -1;
     }
-    printf("EMD_HAL: GPIO %s line %u ready\n", gpio_chip, gpio_line);
+    printf("EMD_HAL: GPIO %s line %u ready\n", path, gpio_line);
 
     g_initialized = 1;
     return 0;
