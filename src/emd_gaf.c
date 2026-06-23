@@ -1025,7 +1025,10 @@ static void _sensor_event_cb(inv_imu_sensor_event_t *event)
 
     pthread_mutex_unlock(&g->output_mutex);
 
-    /* 清除非 racc/rgyr 的标志 (MCU原样保留) */
+    /* 清除非 racc/rgyr 的标志 (与 MCU 原始代码保持一致) */
+    g->edmp_outputs.grv_quat_valid  = 0;
+    g->edmp_outputs.gmrv_quat_valid = 0;
+    g->edmp_outputs.rv_quat_valid   = 0;
     g->edmp_outputs.mag_bias_valid  = 0;
     g->edmp_outputs.rmag_valid      = 0;
     g->edmp_outputs.mrm_state_valid = 0;

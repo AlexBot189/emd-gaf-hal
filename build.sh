@@ -1,16 +1,22 @@
 #!/bin/bash
 #==============================================================================
-# emd-gaf 交叉编译脚本
+# emd-gaf 编译脚本 (重组后)
+#
+# 目录结构:
+#   inc/            — 公开头文件 (emd_gaf.h, emd_gaf_types.h)
+#   src/            — 库源代码 (driver/, hal/, emd_gaf.c)
+#   demo/           — 独立可执行 (链接 libemd_gaf.so)
+#   example/        — 示例程序 (链接 libemd_gaf.so)
+#
+# 目标:
+#   build/libemd_gaf.so   — 动态库 (驱动+HAL+核心)
+#   build/emd-gaf         — 独立可执行 (demo)
+#   build/read_sensor     — 示例程序
+#
 # 用法: ./build.sh [build|clean|native]
-#   build  - 交叉编译 (默认, 清理后编译, aarch64)
+#   build  - 交叉编译 (默认, aarch64)
 #   clean  - 仅清理构建目录
 #   native - 本机编译 (x86_64, 用于测试)
-#
-# 产物:
-#   build/libemd_gaf.so     — 动态库 (机器人主程序链接使用)
-#   build/libemd_gaf.a      — 静态库
-#   build/emd-gaf           — 原有独立可执行文件 (保留)
-#   build/read_sensor       — 示例程序 (链接 libemd_gaf)
 #==============================================================================
 set -e
 
@@ -75,11 +81,12 @@ if [ "$CMD" = "native" ]; then
 
     echo ""
     echo "产物:"
-    echo "  库:   $BUILD_DIR/libemd_gaf.so"
-    echo "  示例: $BUILD_DIR/read_sensor"
-    echo "  独立: $BUILD_DIR/emd-gaf"
+    echo "  库:          $BUILD_DIR/libemd_gaf.so"
+    echo "  独立可执行:  $BUILD_DIR/emd-gaf"
+    echo "  示例:        $BUILD_DIR/read_sensor"
     echo ""
-    echo "运行示例:"
+    echo "运行:"
+    echo "  sudo ./build/emd-gaf -i /dev/i2c-3 -g gpiochip4 -l 2 -m 5"
     echo "  sudo ./build/read_sensor -i /dev/i2c-3 -g gpiochip4 -l 2 -m 5"
 else
     echo "=========================================="
@@ -103,7 +110,7 @@ else
 
     echo ""
     echo "产物:"
-    for f in "$BUILD_DIR"/libemd_gaf.so "$BUILD_DIR"/libemd_gaf.a "$BUILD_DIR"/emd-gaf "$BUILD_DIR"/read_sensor; do
+    for f in "$BUILD_DIR"/libemd_gaf.so "$BUILD_DIR"/emd-gaf "$BUILD_DIR"/read_sensor; do
         if [ -f "$f" ]; then
             echo "  $f"
             $READELF -h "$f" 2>/dev/null | grep -E "Machine|Class|Type" || true
@@ -112,12 +119,12 @@ else
 
     echo ""
     echo "部署:"
-    echo "  scp build/libemd_gaf.so     root@rv1126b:/usr/lib/"
-    echo "  scp build/read_sensor       root@rv1126b:/usr/bin/"
-    echo "  scp build/emd-gaf           root@rv1126b:/usr/bin/"
+    echo "  scp build/libemd_gaf.so  root@rv1126b:/usr/lib/"
+    echo "  scp build/emd-gaf        root@rv1126b:/usr/bin/"
+    echo "  scp build/read_sensor    root@rv1126b:/usr/bin/"
     echo ""
     echo "运行:"
     echo "  ssh root@rv1126b"
     echo "  rmmod inv-mpu-icm45600"
-    echo "  read_sensor -i /dev/i2c-3 -g gpiochip4 -l 2 -m 5"
+    echo "  emd-gaf -i /dev/i2c-3 -g gpiochip4 -l 2 -m 5"
 fi
