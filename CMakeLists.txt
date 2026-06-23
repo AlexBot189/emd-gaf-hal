@@ -10,7 +10,9 @@ if(DEFINED CMAKE_TOOLCHAIN_FILE)
 endif()
 
 # ── Dependencies ──
-find_library(GPIOD_LIB gpiod REQUIRED)
+# libgpiod bundled locally (hal/gpiod/)
+set(GPIOD_DIR ${HAL_DIR}/gpiod)
+set(GPIOD_LIB ${GPIOD_DIR}/lib/libgpiod.so)
 find_library(PTHREAD_LIB pthread REQUIRED)
 find_library(M_LIB m REQUIRED)
 
@@ -58,6 +60,7 @@ set(HAL_SRCS
 
 # ── Include paths ──
 set(INC_DIRS
+    ${GPIOD_DIR}/include
     ${DRIVER_DIR}/../..
     ${DRIVER_DIR}/..
     ${ICT1531_DIR}/..
