@@ -1205,18 +1205,18 @@ static void notify_data(uint64_t time, const inv_edmp_gaf_outputs_t *gaf_outputs
 	/* Calibrated accel (mg → g) */
 	if (gaf_outputs->acc_cal_valid) {
 		printf("[%.3fs] ACCEL:  x=%+.3fg y=%+.3fg z=%+.3fg\n", ts,
-		       gaf_outputs->acc_cal_q16[0] / 65536.0f / 1000.0f,
-		       gaf_outputs->acc_cal_q16[1] / 65536.0f / 1000.0f,
-		       gaf_outputs->acc_cal_q16[2] / 65536.0f / 1000.0f);
+		       gaf_outputs->acc_cal_q16[0] / 65536.0f,
+		       gaf_outputs->acc_cal_q16[1] / 65536.0f,
+		       gaf_outputs->acc_cal_q16[2] / 65536.0f);
 	}
 
 	/* Calibrated gyro (mdps → dps) + bias */
 	if (gaf_outputs->gyr_flags_valid) {
 		printf("[%.3fs] GYRO:   x=%+.3fdps y=%+.3fdps z=%+.3fdps"
 		       "  bias=[%+.4f %+.4f %+.4f]dps  stationary=%d acc=%d\n", ts,
-		       gaf_outputs->gyr_cal_q16[0] / 65536.0f / 1000.0f,
-		       gaf_outputs->gyr_cal_q16[1] / 65536.0f / 1000.0f,
-		       gaf_outputs->gyr_cal_q16[2] / 65536.0f / 1000.0f,
+		       gaf_outputs->gyr_cal_q16[0] / 65536.0f,
+		       gaf_outputs->gyr_cal_q16[1] / 65536.0f,
+		       gaf_outputs->gyr_cal_q16[2] / 65536.0f,
 		       gaf_outputs->gyr_bias_q16[0] / 65536.0f,
 		       gaf_outputs->gyr_bias_q16[1] / 65536.0f,
 		       gaf_outputs->gyr_bias_q16[2] / 65536.0f,
