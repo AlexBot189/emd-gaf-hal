@@ -1,14 +1,12 @@
 /**
  * @file emd-gaf.c
- * @brief eMD GAF 独立可执行程序 — 链接 libemd_gaf.so
+ * @brief IMU HAL 独立可执行程序 — 链接 libimu_hal.so
  *
- * 编译: 通过 CMake 自动链接 libemd_gaf.so
  * 用法: ./emd-gaf -i /dev/i2c-3 -g gpiochip4 -l 2 -m 5
  *
- * 只保留 main(): 参数解析 → emd_gaf_create/init/start → 循环读取输出 → 打印
- * 复用 libemd_gaf.so 的 init/start/stop，不重复驱动代码。
+ * 流程: create → init → start → 循环读取输出 → stop → destroy
  *
- * Copyright (c) 2026 张君宝
+ * Copyright (c) 2026 zhiqiang.yang
  */
 
 #include <stdio.h>
@@ -76,26 +74,26 @@ int main(int argc, char *argv[])
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
 
-    fprintf(stderr, "=== eMD GAF Standalone Demo ===\n");
+    fprintf(stderr, "=== IMU HAL Demo ===\n");
     fprintf(stderr, "[I] I2C: %s, GPIO: %s line %u, Mode: %d\n",
             i2c_dev, gpio_chip, gpio_line, op_mode);
 
-    /* ── 1. Create ── */
+    /* 1. 创建实例 */
     emd_gaf_t *gaf = emd_gaf_create();
     if (!gaf) {
         fprintf(stderr, "[E] emd_gaf_create() failed\n");
         return 1;
     }
 
-    /* ── 2. Init (配置 IMU, 启动 GAF 算法) ── */
+    /* 2. 初始化 */
     if (emd_gaf_init(gaf, i2c_dev, gpio_chip, gpio_line, op_mode) != 0) {
         fprintf(stderr, "[E] emd_gaf_init() failed\n");
         emd_gaf_destroy(gaf);
         return 1;
     }
-    fprintf(stderr, "[I] GAF initialized OK\n");
+    fprintf(stderr, "[I] IMU HAL initialized OK\n");
 
-    /* ── 3. Start (启动后台采集线程) ── */
+    /* 3. 启动后台采集 */
     if (emd_gaf_start(gaf) != 0) {
         fprintf(stderr, "[E] emd_gaf_start() failed\n");
         emd_gaf_destroy(gaf);
@@ -103,10 +101,10 @@ int main(int argc, char *argv[])
     }
     fprintf(stderr, "[I] Background thread started, waiting for data...\n");
 
-    /* ── 4. 等待融合收敛 ── */
+    /* 4. 等待融合收敛 */
     usleep(2000000);
 
-    /* ── 5. 主循环: 读取输出 → 打印 ── */
+    /* 5. 主循环 */
     fprintf(stderr, "[I] Entering read loop (Ctrl+C to stop)...\n\n");
 
     int is_first  = 1;
@@ -117,7 +115,6 @@ int main(int argc, char *argv[])
 
         int ret = emd_gaf_get_output(gaf, &out);
         if (ret == 0) {
-            /* 每 20 行打印一次表头 */
             if (is_first || line_cnt % 20 == 0) {
                 printf("%-12s %8s %12s %12s %12s %12s %12s %12s %12s %12s %12s %6s %4s %4s %4s\n",
                        "Time(s)", "Heading°", "QuatW", "QuatX", "QuatY", "QuatZ",
@@ -139,10 +136,10 @@ int main(int argc, char *argv[])
                    out.gyr_accuracy, out.mag_accuracy);
         }
 
-        usleep(10000); /* 10ms 轮询 */
+        usleep(10000);
     }
 
-    /* ── 6. Cleanup ── */
+    /* 6. 清理 */
     fprintf(stderr, "\n[I] Stopping...\n");
     emd_gaf_stop(gaf);
     emd_gaf_destroy(gaf);

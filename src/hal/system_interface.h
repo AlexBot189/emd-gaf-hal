@@ -1,9 +1,11 @@
-/*
- * system_interface.h - eMD SDK → Linux HAL bridge
+/**
+ * @file system_interface.h
+ * @brief eMD SDK → Linux HAL 桥接层
  *
- * Maps MCU system_interface.h functions to emd_hal.h
- * The eMD drivers call si_* functions; we implement them
- * as wrappers around our Linux HAL.
+ * 将 MCU system_interface.h 的 si_* 函数映射到 emd_hal.h。
+ * eMD 驱动通过 si_* 调用，本文件将其转为 HAL 层调用。
+ *
+ * Copyright (c) 2026 zhiqiang.yang
  */
 #ifndef SYSTEM_INTERFACE_H
 #define SYSTEM_INTERFACE_H
@@ -15,13 +17,13 @@
 extern "C" {
 #endif
 
-/* ── Board ── */
+/* 板级 */
 static inline int si_board_init(void) { return 0; }
 
-/* ── IMU I/O (maps to our HAL) ── */
+/* IMU I/O 映射到 HAL */
 static inline int si_io_imu_init(inv_imu_serif_type_t serif_type) {
     (void)serif_type;
-    return 0; /* already done in emd_hal_init() */
+    return 0;
 }
 
 static inline int si_io_imu_read_reg(uint8_t reg, uint8_t *buf, uint32_t len) {
@@ -32,7 +34,7 @@ static inline int si_io_imu_write_reg(uint8_t reg, const uint8_t *buf, uint32_t 
     return emd_hal_write_reg(reg, buf, len);
 }
 
-/* ── GPIO Interrupt ── */
+/* GPIO 中断 */
 #define SI_GPIO_INT1 1
 
 static inline int si_init_gpio_int(unsigned int int_num,
@@ -40,7 +42,7 @@ static inline int si_init_gpio_int(unsigned int int_num,
     return emd_hal_gpio_init(int_num, (emd_gpio_cb_t)int_cb);
 }
 
-/* ── Timer ── */
+/* 定时器 */
 static inline int  si_init_timers(void) { return 0; }
 static inline void si_sleep_us(uint32_t us) { emd_hal_sleep_us(us); }
 
@@ -48,11 +50,11 @@ static inline uint64_t si_get_time_us(void) {
     return emd_hal_get_time_us();
 }
 
-/* ── IRQ Control ── */
+/* 临界区 */
 static inline void si_disable_irq(void) { emd_hal_disable_irq(); }
 static inline void si_enable_irq(void)  { emd_hal_enable_irq(); }
 
-/* ── Storage ── */
+/* 偏置存储 */
 static inline int si_flash_storage_read(uint8_t *data) {
     return emd_hal_storage_read(data, 84);
 }
@@ -61,7 +63,7 @@ static inline int si_flash_storage_write(const uint8_t *data) {
     return emd_hal_storage_write(data, 84);
 }
 
-/* ── Unused / Stub ── */
+/* 未使用的桩函数 */
 static inline int  si_init_clkin(void)   { return 0; }
 static inline int  si_uninit_clkin(void) { return 0; }
 static inline int  si_config_uart_for_print(int id, int level) { (void)id; (void)level; return 0; }

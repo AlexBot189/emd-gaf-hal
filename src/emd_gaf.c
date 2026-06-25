@@ -1,19 +1,13 @@
 /**
  * @file emd_gaf.c
- * @brief eMD GAF HAL — libemd_gaf.so 核心实现
+ * @brief IMU HAL — libimu_hal.so 核心实现
  *
- * 封装 ICM45608 eDMP GAF 引擎到动态库，提供:
+ * 封装 ICM45608 eDMP GAF 引擎:
  *   - 后台线程自动采集 (gpio poll + FIFO read + decode)
- *   - 线程安全输出缓存 (pthread_mutex)
+ *   - 输出缓存 (pthread_mutex 保护)
  *   - 非阻塞 get_output / get_imu API
  *
- * 内部逻辑来自 app/linux_main.c 的 setup_imu / set_operation_mode /
- * start_algo / sensor_event_cb / stop_algo 等函数，
- * 但将其包装为库的内部实现（不重复定义）。
- *
- * app/ 目录的独立可执行文件保持不变。
- *
- * Copyright (c) 2026 张君宝
+ * Copyright (c) 2026 zhiqiang.yang
  */
 
 #include "emd_gaf.h"
@@ -27,22 +21,20 @@
 #include <signal.h>
 #include <math.h>
 
-/* ── eMD IMU Drivers ── */
+/* eMD IMU Drivers */
 #include "imu/inv_imu_driver_advanced.h"
 #include "imu/inv_imu_edmp.h"
 
-/* ── Magnetometer drivers ── */
+/* Magnetometer drivers */
 #include "invn_mag.h"
 
-/* ── HAL ── */
+/* HAL */
 #include "system_interface.h"
 
-/* ── Frontend ── */
+/* Frontend */
 #include "frontend.h"
 
-/* ═══════════════════════════════════════════════════════════════════
- * 常量 (从 linux_main.c 移植)
- * ═══════════════════════════════════════════════════════════════════ */
+/* 常量定义 */
 
 #define SERIF_TYPE UI_I2C
 
@@ -71,9 +63,7 @@
 #define DEFAULT_GPIO_LINE 2
 #define DEFAULT_IMU_ADDR  0x68
 
-/* ═══════════════════════════════════════════════════════════════════
- * 操作模式定义 (从 linux_main.c 移植)
- * ═══════════════════════════════════════════════════════════════════ */
+/* 操作模式参数结构 */
 
 typedef struct op_mode {
     uint32_t dmp_sensor_odr_us;
@@ -157,12 +147,10 @@ static const op_mode_t supported_cfg[] = {
 };
 #define NUM_OP_MODES (sizeof(supported_cfg) / sizeof(supported_cfg[0]))
 
-/* ═══════════════════════════════════════════════════════════════════
- * 内部结构体 — 不透明句柄 (仅此 TU 可见)
- * ═══════════════════════════════════════════════════════════════════ */
+/* 内部结构体 (opaque handle) */
 
 struct emd_gaf {
-    /* ── 初始化参数 ── */
+    /* 初始化参数 */
     char     i2c_dev[64];
     char     gpio_chip[64];
     unsigned int gpio_line;
@@ -170,44 +158,44 @@ struct emd_gaf {
     uint8_t  op_mode_idx;
     int      initialized;
 
-    /* ── IMU 设备 ── */
+    /* IMU 设备 */
     inv_imu_device_t imu_dev;
 
-    /* ── 中断 / 时间戳 ── */
+    /* 中断 / 时间戳 */
     volatile int      int1_flag;
     volatile uint64_t int1_timestamp;
     uint64_t          timestamp;
 
-    /* ── 当前操作模式参数 ── */
+    /* 当前操作模式 */
     uint32_t dmp_odr_us;
     uint32_t mag_odr_us;
     uint32_t gaf_pdr_us;
     uint8_t  fusion_enabled;
     int      power_save_en;
 
-    /* ── 安装矩阵 / 软铁矩阵 ── */
+    /* 安装矩阵 / 软铁矩阵 */
     int8_t  mounting_matrix[9];
     int32_t soft_iron_matrix[3][3];
 
-    /* ── FIFO ── */
+    /* FIFO */
     uint8_t fifo_data[FIFO_MIRRORING_SIZE];
 
-    /* ── 传感器状态 ── */
+    /* 传感器状态 */
     uint8_t accel_en;
     uint8_t gyro_en;
     int32_t acc_bias_q16[3];
     uint8_t gyro_is_on;
     uint8_t mag_is_on;
 
-    /* ── 高分辨率 / MRM / FIFO push ── */
+    /* 高分辨率 / MRM / FIFO push */
     uint32_t high_res_en;
     uint32_t mrm_auto_is_on;
     uint8_t  fifo_push_en;
 
-    /* ── MRM 事件缓冲 ── */
+    /* MRM 事件 */
     inv_imu_edmp_int_state_t mrm_event;
 
-    /* ── 偏置 / 精度 ── */
+    /* 偏置 / 精度 */
     int16_t gyr_bias_q12[3];
     uint8_t gyr_accuracy;
     int32_t gyr_bias_temperature;
@@ -216,15 +204,15 @@ struct emd_gaf {
     int32_t freeze_mag_bias;
     int32_t frozen_bias_mag[3];
 
-    /* ── 融合输出 ── */
+    /* 融合输出 */
     inv_edmp_gaf_outputs_t edmp_outputs;
 
-    /* ── 后台线程 ── */
+    /* 后台线程 */
     volatile int    running;
     pthread_t       thread;
     pthread_mutex_t output_mutex;
 
-    /* ── 非阻塞读取缓存 ── */
+    /* 输出缓存 */
     emd_output_t  cached_output;
     emd_imu_data_t cached_accel;
     emd_imu_data_t cached_gyro;
@@ -232,9 +220,7 @@ struct emd_gaf {
     int           imu_updated;
 };
 
-/* ═══════════════════════════════════════════════════════════════════
- * 前向声明 (内部静态函数)
- * ═══════════════════════════════════════════════════════════════════ */
+/* 内部函数声明 */
 
 static int  _setup_imu(emd_gaf_t *g);
 static int  _stop_algo(emd_gaf_t *g);
@@ -246,12 +232,12 @@ static int  _init_imu_biases(emd_gaf_t *g);
 static void _convert_output(const inv_edmp_gaf_outputs_t *in, uint64_t ts, emd_output_t *out);
 static void *_thread_main(void *arg);
 
-/* ── 回调需要访问的当前实例 (只能在单实例场景下工作) ── */
+/* 回调需要访问的当前实例 (单实例场景) */
 static emd_gaf_t *g_active_instance = NULL;
 
-/* ═══════════════════════════════════════════════════════════════════
+/*
  * 公共 API — 生命周期
- * ═══════════════════════════════════════════════════════════════════ */
+ */
 
 emd_gaf_t *emd_gaf_create(void)
 {
@@ -267,12 +253,12 @@ emd_gaf_t *emd_gaf_create(void)
     g->imu_addr  = DEFAULT_IMU_ADDR;
     g->op_mode_idx = 0;
 
-    /* 安装矩阵: 单位矩阵 */
+    /* 单位安装矩阵 */
     g->mounting_matrix[0] = 1; g->mounting_matrix[1] = 0; g->mounting_matrix[2] = 0;
     g->mounting_matrix[3] = 0; g->mounting_matrix[4] = 1; g->mounting_matrix[5] = 0;
     g->mounting_matrix[6] = 0; g->mounting_matrix[7] = 0; g->mounting_matrix[8] = 1;
 
-    /* 软铁矩阵: 单位矩阵 (Q30) */
+    /* 单位软铁矩阵 (Q30) */
     g->soft_iron_matrix[0][0] = (1 << 30); g->soft_iron_matrix[0][1] = 0; g->soft_iron_matrix[0][2] = 0;
     g->soft_iron_matrix[1][0] = 0; g->soft_iron_matrix[1][1] = (1 << 30); g->soft_iron_matrix[1][2] = 0;
     g->soft_iron_matrix[2][0] = 0; g->soft_iron_matrix[2][1] = 0; g->soft_iron_matrix[2][2] = (1 << 30);
@@ -323,10 +309,7 @@ int emd_gaf_init(emd_gaf_t *handle, const char *i2c_dev,
     handle->acc_bias_q16[1] = 0;
     handle->acc_bias_q16[2] = 0;
 
-    /* 初始化 MRM 事件 */
     memset(&handle->mrm_event, 0, sizeof(handle->mrm_event));
-
-    /* 偏置默认为 0 */
     memset(handle->mag_bias_q16, 0, sizeof(handle->mag_bias_q16));
 
     /* 从 NVM 恢复偏置 */
@@ -342,21 +325,21 @@ int emd_gaf_init(emd_gaf_t *handle, const char *i2c_dev,
     handle->edmp_outputs.mag_accuracy_flag = handle->mag_accuracy;
     SI_CHECK_RC(rc);
 
-    /* ── 1. Init HAL ── */
+    /* 1. Init HAL */
     rc |= emd_hal_init(handle->i2c_dev, handle->imu_addr,
                        handle->gpio_chip, handle->gpio_line);
     SI_CHECK_RC(rc);
 
-    /* ── 2. 配置 GPIO 中断回调 ── */
+    /* 2. 配置 GPIO 中断回调 */
     g_active_instance = handle;
     rc |= emd_hal_gpio_init(1, (emd_gpio_cb_t)_int_cb);
     SI_CHECK_RC(rc);
 
-    /* ── 3. 初始化 IMU ── */
+    /* 3. 初始化 IMU */
     rc |= _setup_imu(handle);
     SI_CHECK_RC(rc);
 
-    /* ── 4. 配置传感器 + 启动算法 ── */
+    /* 4. 配置传感器 + 启动算法 */
     rc |= _set_operation_mode(handle, &supported_cfg[handle->op_mode_idx]);
     rc |= _start_algo(handle);
     SI_CHECK_RC(rc);
@@ -369,14 +352,14 @@ int emd_gaf_init(emd_gaf_t *handle, const char *i2c_dev,
     return rc;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
+/*
  * 公共 API — 采集控制
- * ═══════════════════════════════════════════════════════════════════ */
+ */
 
 int emd_gaf_start(emd_gaf_t *handle)
 {
     if (!handle || !handle->initialized) return -1;
-    if (handle->running) return 0; /* 已运行 */
+    if (handle->running) return 0;
 
     handle->running = 1;
     int rc = pthread_create(&handle->thread, NULL, _thread_main, handle);
@@ -395,7 +378,6 @@ int emd_gaf_stop(emd_gaf_t *handle)
     handle->running = 0;
     pthread_join(handle->thread, NULL);
 
-    /* 停止算法, 保存偏置 */
     _stop_algo(handle);
     emd_hal_deinit();
 
@@ -405,9 +387,9 @@ int emd_gaf_stop(emd_gaf_t *handle)
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * 公共 API — 数据读取 (非阻塞, 线程安全)
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 公共 API — 数据读取
+ */
 
 int emd_gaf_get_output(emd_gaf_t *handle, emd_output_t *output)
 {
@@ -442,23 +424,22 @@ int emd_gaf_is_running(emd_gaf_t *handle)
     return handle->running;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * 内部实现 — 后台线程
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 后台线程
+ */
 
 static void *_thread_main(void *arg)
 {
     emd_gaf_t *g = (emd_gaf_t *)arg;
     int rc = 0;
 
-    fprintf(stderr, "[I] eMD GAF background thread started (mode=%d)\n", g->op_mode_idx);
+    fprintf(stderr, "[I] IMU HAL background thread started (mode=%d)\n", g->op_mode_idx);
 
     do {
-        int ret = emd_hal_gpio_wait(100); /* 100ms timeout */
+        int ret = emd_hal_gpio_wait(100);
         if (ret < 0) break;
-        if (ret == 0) continue; /* timeout, 检查 g_running */
+        if (ret == 0) continue;
 
-        /* GPIO 中断触发 → 处理 */
         if (g->int1_flag) {
             inv_imu_int_state_t int_state;
 
@@ -467,7 +448,6 @@ static void *_thread_main(void *arg)
             g->timestamp = g->int1_timestamp;
             si_enable_irq();
 
-            /* 读取中断状态 */
             rc |= inv_imu_get_int_status(&g->imu_dev, INV_IMU_INT1, &int_state);
             if (rc) break;
 
@@ -490,13 +470,13 @@ static void *_thread_main(void *arg)
         }
     } while (rc == 0 && g->running);
 
-    fprintf(stderr, "[I] eMD GAF background thread exiting (rc=%d)\n", rc);
+    fprintf(stderr, "[I] IMU HAL background thread exiting (rc=%d)\n", rc);
     return NULL;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * 内部实现 — IMU 初始化
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * IMU 初始化
+ */
 
 static int _setup_imu(emd_gaf_t *g)
 {
@@ -506,34 +486,33 @@ static int _setup_imu(emd_gaf_t *g)
     inv_imu_int_state_t       int_config;
     inv_imu_adv_fifo_config_t fifo_config;
 
-    /* Init transport layer */
+    /* 传输层 */
     g->imu_dev.transport.read_reg   = si_io_imu_read_reg;
     g->imu_dev.transport.write_reg  = si_io_imu_write_reg;
     g->imu_dev.transport.serif_type = SERIF_TYPE;
     g->imu_dev.transport.sleep_us   = si_sleep_us;
 
-    /* Init sensor event callback */
+    /* 传感器事件回调 */
     e->sensor_event_cb = _sensor_event_cb;
 
-    /* Wait 3 ms to ensure device is properly supplied */
     si_sleep_us(3000);
 
     rc |= inv_imu_adv_init(&g->imu_dev);
     SI_CHECK_RC(rc);
 
-    /* Configure interrupts pins */
+    /* 配置中断引脚 */
     int_pin_config.int_polarity = INTX_CONFIG2_INTX_POLARITY_HIGH;
     int_pin_config.int_mode     = INTX_CONFIG2_INTX_MODE_PULSE;
     int_pin_config.int_drive    = INTX_CONFIG2_INTX_DRIVE_PP;
     rc |= inv_imu_set_pin_config_int(&g->imu_dev, INV_IMU_INT1, &int_pin_config);
     SI_CHECK_RC(rc);
 
-    /* Set sensor FSR */
+    /* 设置传感器量程 */
     rc |= inv_imu_set_accel_fsr(&g->imu_dev, ACCEL_FSR_ENUM);
     rc |= inv_imu_set_gyro_fsr(&g->imu_dev, GYRO_FSR_ENUM);
     SI_CHECK_RC(rc);
 
-    /* Interrupts configuration for auto MRM */
+    /* 自动 MRM 中断配置 */
     if (g->mrm_auto_is_on) {
         inv_imu_edmp_int_state_t apex_int_config;
         memset(&apex_int_config, INV_IMU_DISABLE, sizeof(apex_int_config));
@@ -543,7 +522,7 @@ static int _setup_imu(emd_gaf_t *g)
         rc |= inv_imu_edmp_set_config_int_apex(&g->imu_dev, &apex_int_config);
     }
 
-    /* Interrupts configuration: FIFO + EDMP */
+    /* 中断: FIFO + EDMP */
     memset(&int_config, INV_IMU_DISABLE, sizeof(int_config));
     int_config.INV_FIFO_THS = INV_IMU_ENABLE;
     if (g->mrm_auto_is_on)
@@ -551,7 +530,7 @@ static int _setup_imu(emd_gaf_t *g)
     rc |= inv_imu_set_config_int(&g->imu_dev, INV_IMU_INT1, &int_config);
     SI_CHECK_RC(rc);
 
-    /* Configure FIFO */
+    /* FIFO 配置 */
     rc |= inv_imu_adv_get_fifo_config(&g->imu_dev, &fifo_config);
     fifo_config.base_conf.fifo_mode  = FIFO_CONFIG0_FIFO_MODE_SNAPSHOT;
     fifo_config.base_conf.fifo_depth = FIFO_CONFIG0_FIFO_DEPTH_APEX;
@@ -571,9 +550,9 @@ static int _setup_imu(emd_gaf_t *g)
     return rc;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * 内部实现 — 停止算法
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 停止算法
+ */
 
 static int _stop_algo(emd_gaf_t *g)
 {
@@ -581,7 +560,7 @@ static int _stop_algo(emd_gaf_t *g)
 
     rc |= inv_imu_edmp_disable(&g->imu_dev);
 
-    /* Get latest computed gyro and mag bias */
+    /* 获取最新计算的偏置 */
     rc |= inv_imu_edmp_get_gaf_gyr_bias(&g->imu_dev, g->gyr_bias_q12,
                                          &g->gyr_bias_temperature, &g->gyr_accuracy);
     rc |= inv_imu_edmp_get_gaf_mag_bias(&g->imu_dev, g->mag_bias_q16, &g->mag_accuracy);
@@ -589,9 +568,9 @@ static int _stop_algo(emd_gaf_t *g)
     return rc;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * 内部实现 — 设置操作模式
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 设置操作模式
+ */
 
 static int _set_operation_mode(emd_gaf_t *g, const op_mode_t *op_mode)
 {
@@ -606,7 +585,7 @@ static int _set_operation_mode(emd_gaf_t *g, const op_mode_t *op_mode)
 
     rc |= inv_imu_set_accel_mode(&g->imu_dev, PWR_MGMT0_ACCEL_MODE_OFF);
     rc |= inv_imu_set_gyro_mode(&g->imu_dev, PWR_MGMT0_GYRO_MODE_OFF);
-    /* Flush FIFO */
+    /* 清空 FIFO */
     rc |= inv_imu_flush_fifo(&g->imu_dev);
     g->int1_timestamp = 0;
     g->int1_flag      = 0;
@@ -706,7 +685,7 @@ static int _set_operation_mode(emd_gaf_t *g, const op_mode_t *op_mode)
     default: break;
     }
 
-    /* Force clock configuration to fit I2C master need */
+    /* 强制时钟配置以满足 I2C master 需求 */
     if ((op_mode->acc.pm == PWR_MGMT0_ACCEL_MODE_LP) && (g->gyro_is_on == 0))
         rc |= inv_imu_select_accel_lp_clk(&g->imu_dev, SMC_CONTROL_0_ACCEL_LP_CLK_RCOSC);
     else
@@ -722,7 +701,6 @@ static int _set_operation_mode(emd_gaf_t *g, const op_mode_t *op_mode)
             rc |= inv_imu_set_gyro_mode(&g->imu_dev, PWR_MGMT0_GYRO_MODE_LN);
         else
             rc |= inv_imu_set_gyro_mode(&g->imu_dev, PWR_MGMT0_GYRO_MODE_LP);
-        /* Wait for gyro startup time */
         si_sleep_us(GYR_STARTUP_TIME_US);
     }
     SI_CHECK_RC(rc);
@@ -730,9 +708,9 @@ static int _set_operation_mode(emd_gaf_t *g, const op_mode_t *op_mode)
     return rc;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * 内部实现 — 启动算法
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 启动算法
+ */
 
 static int _start_algo(emd_gaf_t *g)
 {
@@ -740,14 +718,12 @@ static int _start_algo(emd_gaf_t *g)
     inv_imu_edmp_gaf_parameters_t       gaf_params;
     inv_imu_edmp_powersave_parameters_t apex_parameters;
 
-    /* Clear global variable when new algorithm execution starts */
     memset(&g->edmp_outputs, 0, sizeof(g->edmp_outputs));
 
-    /* Initialize APEX for GAF */
     rc |= inv_imu_edmp_init(&g->imu_dev);
     SI_CHECK_RC(rc);
 
-    /* Configure GAF parameters */
+    /* GAF 参数 */
     rc |= inv_imu_edmp_get_gaf_parameters(&g->imu_dev, &gaf_params);
     gaf_params.pdr_us        = g->gaf_pdr_us;
     gaf_params.run_spherical = g->fusion_enabled;
@@ -766,10 +742,10 @@ static int _start_algo(emd_gaf_t *g)
     rc |= inv_imu_edmp_set_gaf_parameters(&g->imu_dev, &gaf_params);
     SI_CHECK_RC(rc);
 
-    /* Configure GAF 6 or 9 axis : AG, AM or AGM */
+    /* 配置 GAF 6 或 9 轴: AG, AM 或 AGM */
     rc |= inv_imu_edmp_set_gaf_mode(&g->imu_dev, g->gyro_is_on, g->mag_is_on);
 
-    /* Configure APEX parameters for power-save mode */
+    /* 省电模式 */
     rc |= inv_imu_edmp_get_powersave_parameters(&g->imu_dev, &apex_parameters);
     if (g->power_save_en) {
         apex_parameters.power_save_en = INV_IMU_ENABLE;
@@ -784,7 +760,7 @@ static int _start_algo(emd_gaf_t *g)
     rc |= inv_imu_edmp_set_powersave_parameters(&g->imu_dev, &apex_parameters);
     SI_CHECK_RC(rc);
 
-    /* Set EDMP mounting matrix */
+    /* 设置安装矩阵 */
     rc |= inv_imu_edmp_set_mounting_matrix(&g->imu_dev, g->mounting_matrix);
     if (g->mag_is_on) {
         rc |= inv_imu_edmp_set_gaf_soft_iron_cor_matrix(&g->imu_dev, g->soft_iron_matrix);
@@ -804,31 +780,30 @@ static int _start_algo(emd_gaf_t *g)
     else
         rc |= inv_imu_edmp_stop_gaf_fifo_push(&g->imu_dev);
 
-    /* Reset FIFO */
+    /* 重置 FIFO */
     rc |= inv_imu_adv_reset_fifo(&g->imu_dev);
 
-    /* Reset interrupt flag */
     si_disable_irq();
     g->int1_flag = 0;
     si_enable_irq();
 
-    /* Enable GAF */
+    /* 使能 GAF */
     rc |= inv_imu_edmp_enable_gaf(&g->imu_dev);
     SI_CHECK_RC(rc);
 
-    /* Enable eDMP */
+    /* 使能 eDMP */
     rc |= inv_imu_edmp_enable(&g->imu_dev);
 
-    /* Let dmp see Accel data ready on ISR0 */
+    /* 让 dmp 看到 ISR0 上的 accel/gyro 数据就绪 */
     rc |= inv_imu_edmp_unmask_int_src(&g->imu_dev, INV_IMU_EDMP_INT0,
                                       EDMP_INT_SRC_ACCEL_DRDY_MASK | EDMP_INT_SRC_GYRO_DRDY_MASK);
 
     return rc;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * 内部实现 — FIFO 传感器事件回调
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * FIFO 传感器事件回调
+ */
 
 static void _sensor_event_cb(inv_imu_sensor_event_t *event)
 {
@@ -993,7 +968,7 @@ static void _sensor_event_cb(inv_imu_sensor_event_t *event)
                 (25 * (1UL << 16)) + ((int32_t)event->temperature * 32768);
             g->edmp_outputs.temperature_valid = 1;
 
-            /* ── 更新公开输出缓存 (线程安全) ── */
+            /* 更新输出缓存 */
             pthread_mutex_lock(&g->output_mutex);
             _convert_output(&g->edmp_outputs, g->timestamp, &g->cached_output);
             g->output_updated = 1;
@@ -1003,7 +978,7 @@ static void _sensor_event_cb(inv_imu_sensor_event_t *event)
         }
     }
 
-    /* ── 更新原始 IMU 缓存 ── */
+    /* 更新原始 IMU 缓存 */
     pthread_mutex_lock(&g->output_mutex);
 
     g->cached_accel.accel_x = event->accel[0] * ACCEL_FSR_G / 32768.0f;
@@ -1025,7 +1000,7 @@ static void _sensor_event_cb(inv_imu_sensor_event_t *event)
 
     pthread_mutex_unlock(&g->output_mutex);
 
-    /* 清除非 racc/rgyr 的标志 (与 MCU 原始代码保持一致) */
+    /* 清除非 accel/gyro 的标志 (与 MCU 代码保持一致) */
     g->edmp_outputs.grv_quat_valid  = 0;
     g->edmp_outputs.gmrv_quat_valid = 0;
     g->edmp_outputs.rv_quat_valid   = 0;
@@ -1041,9 +1016,9 @@ static void _sensor_event_cb(inv_imu_sensor_event_t *event)
     }
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * 内部实现 — GPIO 中断回调
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * GPIO 中断回调
+ */
 
 static void _int_cb(void *context, unsigned int int_num)
 {
@@ -1058,9 +1033,9 @@ static void _int_cb(void *context, unsigned int int_num)
     }
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * 内部实现 — IMU 偏置初始化 (从 NVM 恢复)
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 从 NVM 恢复偏置
+ */
 
 static int _init_imu_biases(emd_gaf_t *g)
 {
@@ -1090,9 +1065,9 @@ static int _init_imu_biases(emd_gaf_t *g)
     return rc;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * 内部实现 — 输出格式转换 (Q30/Q16 → float)
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * Q30/Q16 → float 格式转换
+ */
 
 static void _convert_output(const inv_edmp_gaf_outputs_t *in, uint64_t ts,
                             emd_output_t *out)
@@ -1101,13 +1076,13 @@ static void _convert_output(const inv_edmp_gaf_outputs_t *in, uint64_t ts,
 
     out->timestamp_us = ts;
 
-    /* 9-axis quaternion (Q30 → float) */
+    /* 9轴四元数 (Q30 → float) */
     if (in->rv_quat_valid) {
         out->quat_w = in->rv_quat_q30[0] / 1073741824.0f;
         out->quat_x = in->rv_quat_q30[1] / 1073741824.0f;
         out->quat_y = in->rv_quat_q30[2] / 1073741824.0f;
         out->quat_z = in->rv_quat_q30[3] / 1073741824.0f;
-        /* heading from quaternion (in radians, Q27) */
+        /* 从四元数解算航向角 (弧度转度, Q27) */
         float heading_rad = in->rv_heading_q27 / 134217728.0f;
         out->heading_deg  = heading_rad * 57.29578f;
     }

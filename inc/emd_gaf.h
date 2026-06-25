@@ -1,52 +1,15 @@
 /**
  * @file emd_gaf.h
- * @brief eMD GAF HAL — ICM45608 9 轴融合动态库公共 API
+ * @brief IMU HAL — ICM45608 9轴融合动态库公共API
  *
- * ## 概述
+ * libimu_hal.so 封装 InvenSense ICM45608 eDMP GAF (Gyro-Assisted Fusion)
+ * 引擎的 Linux userspace 驱动，提供 9 轴 IMU 数据采集和融合。
  *
- *   libemd_gaf.so 封装了 InvenSense ICM45608 eDMP GAF (Gyro-Assisted Fusion)
- *   引擎的 Linux userspace 驱动。提供 9 轴 IMU 数据的采集和融合,
- *   输出包括四元数、航向角、校准后的传感器数据和静止检测标志。
+ * 线程模型:
+ *   后台线程通过 GPIO 中断 + I2C FIFO 读取传感器数据，
+ *   用户线程通过 get_output/get_imu 从缓存读取，不触发 I/O。
  *
- * ## 最小示例 (复制即用)
- *
- * @code
- *   #include "emd_gaf.h"
- *
- *   emd_gaf_t *gaf = emd_gaf_create();
- *   emd_gaf_init(gaf, "/dev/i2c-3", "gpiochip4", 2, 5);
- *   emd_gaf_start(gaf);
- *
- *   usleep(1000000);  // 等待融合收敛
- *
- *   emd_output_t out;
- *   while (running) {
- *       emd_gaf_get_output(gaf, &out);
- *       printf("heading=%.1f° quat=(%.3f,%.3f,%.3f,%.3f) stationary=%d\n",
- *              out.heading_deg, out.quat_w, out.quat_x, out.quat_y, out.quat_z,
- *              out.stationary);
- *       usleep(10000);
- *   }
- *
- *   emd_gaf_stop(gaf);
- *   emd_gaf_destroy(gaf);
- * @endcode
- *
- * ## 线程模型
- *
- *   ┌──────────────────────────┐     ┌────────────────────────┐
- *   │  后台采集线程 (libemd_gaf) │     │  用户线程 (你的代码)     │
- *   │                          │     │                        │
- *   │  GPIO poll 等待 INT1     │     │ emd_gaf_get_output()   │
- *   │  I2C FIFO 读取 + 解码    │ ──→ │   → 只读缓存 (非阻塞)   │
- *   │  更新输出缓存 (mutex)    │     │ emd_gaf_get_imu()      │
- *   │                          │     │   → 只读缓存 (非阻塞)   │
- *   └──────────────────────────┘     └────────────────────────┘
- *
- *   用户线程 "不触 I2C/GPIO" — 只读缓存。
- *   get_output/get_imu 只需一次 memcpy + mutex lock, ~百纳秒量级。
- *
- * ## 操作模式 (op_mode 0-9)
+ * 操作模式 (op_mode 0-9):
  *
  *   | 模式 | 描述                    | ODR    | 融合 |
  *   |------|-------------------------|--------|------|
@@ -61,7 +24,7 @@
  *   | 8    | ALP GLP, MAG OFF        | 50Hz   | 是   |
  *   | 9    | ALP, GYRO OFF, MAG 50Hz | 100Hz  | 是   |
  *
- * Copyright (c) 2026 张君宝
+ * Copyright (c) 2026 zhiqiang.yang
  */
 #ifndef EMD_GAF_H
 #define EMD_GAF_H
@@ -72,118 +35,94 @@
 extern "C" {
 #endif
 
-/* ── 不透明句柄 ── */
+/* 不透明句柄 */
 typedef struct emd_gaf emd_gaf_t;
 
-/* ═══════════════════════════════════════════════════════════════════
- * 1. 生命周期
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 生命周期
+ */
 
 /**
- * @brief 创建 GAF 实例
- *
- * 分配内部数据结构，返回不透明句柄。
- * 一个进程通常只需一个实例。
- *
- * @return 成功返回非 NULL, 内存不足返回 NULL。
+ * @brief 创建 IMU HAL 实例
+ * @return 成功返回非 NULL，内存不足返回 NULL
  */
 emd_gaf_t *emd_gaf_create(void);
 
 /**
- * @brief 销毁 GAF 实例, 释放所有资源
+ * @brief 销毁实例，释放所有资源
  *
- * 自动停止后台线程 (如果已启动), 释放 I2C/GPIO 资源,
- * 保存 IMU 校准偏置到文件。
+ * 自动停止后台线程（如已启动），释放 I2C/GPIO 资源，
+ * 保存校准偏置到文件。
  *
- * @param handle GAF 实例
+ * @param handle 实例句柄
  */
 void emd_gaf_destroy(emd_gaf_t *handle);
 
 /**
  * @brief 初始化 IMU 并配置 HAL
  *
- * 打开 I2C 设备, 请求 GPIO 中断线, 初始化 ICM45608,
- * 设置中断和 FIFO 配置。
- *
+ * 打开 I2C 设备，配置 GPIO 中断线，初始化 ICM45608。
  * 必须在 emd_gaf_start() 之前调用。
  *
- * @param handle    GAF 实例
- * @param i2c_dev   I2C 设备路径, 如 "/dev/i2c-3"
- * @param gpio_chip GPIO 芯片名, 如 "gpiochip4" 或 "/dev/gpiochip4"
- * @param gpio_line GPIO 中断线编号, 如 2 (对应 INT1)
- * @param op_mode   操作模式 0-9, 见上方模式表
- * @return 0=成功; <0=失败
+ * @param handle    实例句柄
+ * @param i2c_dev   I2C 设备路径，如 "/dev/i2c-3"
+ * @param gpio_chip GPIO 芯片名，如 "gpiochip4"
+ * @param gpio_line GPIO 中断线编号
+ * @param op_mode   操作模式 0-9
+ * @return 0 成功，<0 失败
  */
 int emd_gaf_init(emd_gaf_t *handle, const char *i2c_dev,
                  const char *gpio_chip, unsigned int gpio_line,
                  int op_mode);
 
-/* ═══════════════════════════════════════════════════════════════════
- * 2. 采集控制
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 采集控制
+ */
 
 /**
  * @brief 启动后台采集线程
- *
- * 创建 pthread, 在后台执行主循环:
- *   GPIO poll → FIFO 读取 → 解码 → 更新输出缓存
- *
- * @param handle GAF 实例
- * @return 0=成功; <0=失败
+ * @param handle 实例句柄
+ * @return 0 成功，<0 失败
  */
 int emd_gaf_start(emd_gaf_t *handle);
 
 /**
- * @brief 停止后台采集线程
- *
- * 设置退出标志, pthread_join 等待线程结束,
- * 然后执行 stop_algo() 取出最新偏置并保存。
- *
- * @param handle GAF 实例
- * @return 0=成功
+ * @brief 停止后台采集线程，保存偏置
+ * @param handle 实例句柄
+ * @return 0 成功
  */
 int emd_gaf_stop(emd_gaf_t *handle);
 
-/* ═══════════════════════════════════════════════════════════════════
- * 3. 数据读取 (非阻塞, 线程安全)
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 数据读取（非阻塞，线程安全）
+ */
 
 /**
- * @brief 获取最近一次 9 轴融合输出 (非阻塞)
+ * @brief 获取最近一次 9 轴融合输出
  *
- * 直接从后台线程维护的缓存中拷贝, 不触发 I/O。
- * 延迟: 一次 memcpy + pthread_mutex lock ~ 百纳秒。
- * 可在高频 RT 线程中调用。
+ * 从后台线程维护的缓存中拷贝，不触发 I/O。
  *
- * @param handle GAF 实例
- * @param output [out] 输出数据, 调用者分配
- * @return 0=有更新数据; 1=无新数据 (缓存未更新); <0=错误
- *
- * @code
- * emd_output_t out;
- * if (emd_gaf_get_output(gaf, &out) == 0) {
- *     printf("heading=%.1f°\n", out.heading_deg);
- * }
- * @endcode
+ * @param handle 实例句柄
+ * @param output [out] 输出数据
+ * @return 0 有新数据，1 无新数据，<0 错误
  */
 int emd_gaf_get_output(emd_gaf_t *handle, emd_output_t *output);
 
 /**
- * @brief 获取最近一次原始 IMU 数据 (非阻塞)
+ * @brief 获取最近一次原始 IMU 数据
  *
- * 返回加速度计和陀螺仪的原始数据 (未经 eDMP 融合)。
+ * 返回加速度计和陀螺仪原始数据（未融合）。
  *
- * @param handle GAF 实例
- * @param accel  [out] 加速度数据 (g), 调用者分配, 可为 NULL
- * @param gyro   [out] 角速度数据 (dps), 调用者分配, 可为 NULL
- * @return 0=成功; <0=错误
+ * @param handle 实例句柄
+ * @param accel  [out] 加速度 (g)，可为 NULL
+ * @param gyro   [out] 角速度 (dps)，可为 NULL
+ * @return 0 成功，<0 错误
  */
 int emd_gaf_get_imu(emd_gaf_t *handle, emd_imu_data_t *accel, emd_imu_data_t *gyro);
 
 /**
- * @brief 查询后台线程是否在运行
- *
- * @return 1=运行中; 0=已停止
+ * @brief 查询后台线程状态
+ * @return 1 运行中，0 已停止
  */
 int emd_gaf_is_running(emd_gaf_t *handle);
 

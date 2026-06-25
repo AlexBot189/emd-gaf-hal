@@ -1,10 +1,13 @@
-/*
- * emd_hal.c - eMD HAL Linux Userspace Implementation
+/**
+ * @file emd_hal.c
+ * @brief HAL Linux userspace 实现
  *
- * Hardware: I2C3, 400kHz, ICM45608 addr 0x68
- *           INT1: GPIO4_PA2, IRQ_TYPE_LEVEL_LOW
+ * 硬件: I2C3, 400kHz, ICM45608 addr 0x68
+ *        INT1: GPIO4_PA2
  *
- * Dependencies: linux/i2c-dev.h, libgpiod, pthread
+ * 依赖: linux/i2c-dev.h, libgpiod, pthread
+ *
+ * Copyright (c) 2026 zhiqiang.yang
  */
 #include "emd_hal.h"
 
@@ -25,7 +28,7 @@
 /* libgpiod */
 #include <gpiod.h>
 
-/* ── Private state ── */
+/* 内部状态 */
 static int              g_i2c_fd       = -1;
 static uint8_t          g_imu_addr     = 0x68;
 
@@ -40,9 +43,9 @@ static int              g_initialized  = 0;
 
 static const char      *g_bias_file    = "./imu_bias.bin";
 
-/* ═══════════════════════════════════════════════════════════════════
- * I2C Operations
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * I2C 操作
+ */
 
 int emd_hal_read_reg(uint8_t reg, uint8_t *buf, uint32_t len)
 {
@@ -96,15 +99,14 @@ int emd_hal_write_reg(uint8_t reg, const uint8_t *buf, uint32_t len)
     return 0;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * GPIO Interrupt (libgpiod)
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * GPIO 中断 (libgpiod)
+ */
 
 int emd_hal_gpio_init(unsigned int int_num, emd_gpio_cb_t cb)
 {
     g_gpio_num = int_num;
     g_gpio_cb  = cb;
-    /* Actual line setup done in emd_hal_init with chip+line */
     return 0;
 }
 
@@ -132,9 +134,9 @@ int emd_hal_gpio_wait(int timeout_ms)
     return 1;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * Timer
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 定时器
+ */
 
 void emd_hal_sleep_us(uint32_t us)
 {
@@ -148,9 +150,9 @@ uint64_t emd_hal_get_time_us(void)
     return (uint64_t)ts.tv_sec * 1000000ULL + ts.tv_nsec / 1000;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * IRQ Control (mutex)
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 临界区保护
+ */
 
 void emd_hal_disable_irq(void)
 {
@@ -162,9 +164,9 @@ void emd_hal_enable_irq(void)
     pthread_mutex_unlock(&g_irq_mutex);
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * Storage
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 偏置文件持久化
+ */
 
 int emd_hal_storage_read(uint8_t *data, uint32_t size)
 {
@@ -186,9 +188,9 @@ int emd_hal_storage_write(const uint8_t *data, uint32_t size)
     return (n == size) ? 0 : -1;
 }
 
-/* ═══════════════════════════════════════════════════════════════════
- * Init / Deinit
- * ═══════════════════════════════════════════════════════════════════ */
+/*
+ * 初始化 / 反初始化
+ */
 
 int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
                  const char *gpio_chip, unsigned int gpio_line)
@@ -196,7 +198,7 @@ int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
     if (g_initialized)
         return 0;
 
-    /* ── I2C ── */
+    /* I2C */
     g_i2c_fd = open(i2c_dev, O_RDWR);
     if (g_i2c_fd < 0) {
         fprintf(stderr, "EMD_HAL: open %s failed: %s\n",
@@ -206,9 +208,8 @@ int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
     g_imu_addr = imu_addr;
     printf("EMD_HAL: I2C %s ready (addr=0x%02x)\n", i2c_dev, imu_addr);
 
-    /* ── GPIO ── */
-    /* gpiod_chip_open needs full path like /dev/gpiochip4.
-     * Accept both "gpiochip4" and "/dev/gpiochip4". */
+    /* GPIO */
+    /* 接受 "gpiochip4" 或 "/dev/gpiochip4" 两种格式 */
     char path[64];
     if (gpio_chip[0] == '/')
         snprintf(path, sizeof(path), "%s", gpio_chip);
@@ -231,9 +232,9 @@ int emd_hal_init(const char *i2c_dev, uint8_t imu_addr,
         return -1;
     }
 
-    /* INT1: DTS says IRQ_TYPE_LEVEL_LOW, ICM45608 INT pulses active low.
-     * MCU configures INT pin as push-pull, active high after polarity config.
-     * Request rising edge to match MCU behavior. */
+    /* INT1: DTS 配置为 IRQ_TYPE_LEVEL_LOW，ICM45608 INT 引脚脉冲低有效。
+     * MCU 将 INT 引脚配置为 push-pull, active high。
+     * 这里用上升沿触发匹配 MCU 行为。 */
     if (gpiod_line_request_rising_edge_events(g_gpio_line, "emd-gaf") < 0) {
         fprintf(stderr, "EMD_HAL: gpiod request event failed: %s\n",
                 strerror(errno));

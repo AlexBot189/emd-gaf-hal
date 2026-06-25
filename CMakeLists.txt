@@ -1,18 +1,15 @@
 cmake_minimum_required(VERSION 3.10)
-project(emd-gaf C)
+project(imu-hal C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-# ── Toolchain (set via -DCMAKE_TOOLCHAIN_FILE for cross-compile) ──
+# Toolchain (set via -DCMAKE_TOOLCHAIN_FILE for cross-compile)
 if(DEFINED CMAKE_TOOLCHAIN_FILE)
     message(STATUS "Cross-compiling with ${CMAKE_TOOLCHAIN_FILE}")
 endif()
 
-# ═══════════════════════════════════════════════════════════════════
-# 目录定义 (重组后)
-# ═══════════════════════════════════════════════════════════════════
-
+# 目录定义
 set(PROJECT_ROOT   ${CMAKE_SOURCE_DIR})
 set(INC_DIR        ${PROJECT_ROOT}/inc)
 set(SRC_DIR        ${PROJECT_ROOT}/src)
@@ -24,7 +21,7 @@ set(TOOLS_DIR      ${SRC_DIR}/tools)
 set(DEMO_DIR       ${PROJECT_ROOT}/demo)
 set(EXAMPLE_DIR    ${PROJECT_ROOT}/example)
 
-# ── Dependencies ──
+# 依赖
 set(GPIOD_DIR ${HAL_DIR}/gpiod)
 
 find_library(GPIOD_SYS gpiod)
@@ -45,23 +42,21 @@ endif()
 find_library(PTHREAD_LIB pthread REQUIRED)
 find_library(M_LIB m REQUIRED)
 
-# ── Include paths ──
+# 头文件路径
 set(INC_DIRS
-    ${GPIOD_DIR}/include          # gpiod.h
-    ${DRIVER_DIR}/icm45608        # imu/inv_imu_driver.h (driver includes use "imu/xxx.h")
-    ${DRIVER_DIR}                 # Ict1531x/Ict1531x.h (mag driver includes use "Ict1531x/xxx.h")
-    ${HAL_DIR}                    # system_interface.h, emd_hal.h
-    ${SRC_DIR}                    # frontend.h, invn_mag.h
-    ${TOOLS_DIR}                  # InvError.h
-    ${TOOLS_DIR}/Invn/EmbUtils    # Message.h
-    ${INC_DIR}                    # emd_gaf.h, emd_gaf_types.h
+    ${GPIOD_DIR}/include
+    ${DRIVER_DIR}/icm45608
+    ${DRIVER_DIR}
+    ${HAL_DIR}
+    ${SRC_DIR}
+    ${TOOLS_DIR}
+    ${TOOLS_DIR}/Invn/EmbUtils
+    ${INC_DIR}
 )
 
-# ═══════════════════════════════════════════════════════════════════
 # 源文件
-# ═══════════════════════════════════════════════════════════════════
 
-# IMU driver
+# IMU 驱动
 set(IMU_SRCS
     ${IMU_DIR}/inv_imu_driver.c
     ${IMU_DIR}/inv_imu_driver_advanced.c
@@ -75,17 +70,17 @@ set(IMU_SRCS
     ${IMU_DIR}/sif_feature_extract_ir.c
 )
 
-# Magnetometer driver
+# 磁力计驱动
 set(MAG_SRCS
     ${ICT1531_DIR}/Ict1531x.c
 )
 
-# Mag adapter (needed by lib)
+# Mag 适配层
 set(MAG_ADAPTER_SRCS
     ${SRC_DIR}/invn_mag_ict1531x.c
 )
 
-# Tools
+# 工具
 set(TOOLS_SRCS
     ${TOOLS_DIR}/Invn/EmbUtils/Message.c
 )
@@ -95,16 +90,13 @@ set(HAL_SRCS
     ${HAL_DIR}/emd_hal.c
 )
 
-# Library core
+# 库核心
 set(LIB_CORE_SRCS
     ${SRC_DIR}/emd_gaf.c
 )
 
-# ═══════════════════════════════════════════════════════════════════
-# 目标 1: libemd_gaf.so — 动态库
-# ═══════════════════════════════════════════════════════════════════
-
-add_library(emd_gaf SHARED
+# 目标 1: libimu_hal.so — 动态库
+add_library(imu_hal SHARED
     ${IMU_SRCS}
     ${MAG_SRCS}
     ${MAG_ADAPTER_SRCS}
@@ -113,7 +105,7 @@ add_library(emd_gaf SHARED
     ${LIB_CORE_SRCS}
 )
 
-target_include_directories(emd_gaf
+target_include_directories(imu_hal
     PUBLIC
         $<BUILD_INTERFACE:${INC_DIR}>
         $<INSTALL_INTERFACE:include>
@@ -121,35 +113,29 @@ target_include_directories(emd_gaf
         ${INC_DIRS}
 )
 
-target_link_libraries(emd_gaf
+target_link_libraries(imu_hal
     PUBLIC ${GPIOD_LIB} ${PTHREAD_LIB} ${M_LIB}
 )
 
-target_compile_options(emd_gaf PRIVATE -Wall -Wextra -O2)
+target_compile_options(imu_hal PRIVATE -Wall -Wextra -O2)
 
 # 安装
-install(TARGETS emd_gaf
+install(TARGETS imu_hal
     ARCHIVE DESTINATION lib
     LIBRARY DESTINATION lib
 )
-install(DIRECTORY inc/ DESTINATION include/emd_gaf)
+install(DIRECTORY inc/ DESTINATION include/imu_hal)
 
-# ═══════════════════════════════════════════════════════════════════
-# 目标 2: emd-gaf — 独立可执行 (链接 libemd_gaf.so)
-# ═══════════════════════════════════════════════════════════════════
-
+# 目标 2: emd-gaf — 可执行程序 (链接 libimu_hal.so)
 add_executable(emd-gaf ${DEMO_DIR}/emd-gaf.c)
-target_link_libraries(emd-gaf emd_gaf)
+target_link_libraries(emd-gaf imu_hal)
 target_compile_options(emd-gaf PRIVATE -Wall -Wextra -O2)
 
 install(TARGETS emd-gaf DESTINATION bin)
 
-# ═══════════════════════════════════════════════════════════════════
-# 目标 3: read_sensor — 示例程序 (链接 libemd_gaf.so)
-# ═══════════════════════════════════════════════════════════════════
-
+# 目标 3: read_sensor — 示例程序 (链接 libimu_hal.so)
 add_executable(read_sensor ${EXAMPLE_DIR}/read_sensor.c)
-target_link_libraries(read_sensor emd_gaf)
+target_link_libraries(read_sensor imu_hal)
 target_compile_options(read_sensor PRIVATE -Wall -Wextra -O2)
 
 install(TARGETS read_sensor DESTINATION bin)
